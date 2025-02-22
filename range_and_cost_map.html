@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Business Jets Range Map</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css" />
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            display: flex;
+        }
+        #sidebar {
+            width: 400px;
+            height: 100vh;
+            overflow-y: auto;
+            background: white;
+            padding: 20px;
+            box-shadow: 2px 0 5px rgba(0,0,0,0.1);
+        }
+        #map {
+            flex: 1;
+            height: 100vh;
+        }
+        .legend {
+            padding: 10px;
+            background: white;
+            border-radius: 5px;
+            box-shadow: 0 0 15px rgba(0,0,0,0.2);
+        }
+        .legend-item {
+            margin: 5px 0;
+        }
+        .color-box {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            margin-right: 5px;
+            vertical-align: middle;
+        }
+        .location-select {
+            position: absolute;
+            top: 10px;
+            left: 450px;
+            z-index: 1000;
+            background: white;
+            padding: 5px;
+            border-radius: 5px;
+            box-shadow: 0 0 15px rgba(0,0,0,0.2);
+        }
+        select {
+            padding: 5px;
+            font-size: 14px;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+            font-size: 14px;
+        }
+        th, td {
+            padding: 8px;
+            text-align: left;
+            border-bottom: 1px solid #ddd;
+        }
+        th {
+            background-color: #f5f5f5;
+            cursor: pointer;
+        }
+        th:hover {
+            background-color: #e5e5e5;
+        }
+        tr:hover {
+            background-color: #f9f9f9;
+            cursor: pointer;
+        }
+        .sort-arrow {
+            display: inline-block;
+            width: 0;
+            height: 0;
+            margin-left: 5px;
+            vertical-align: middle;
+        }
+        .sort-arrow.asc {
+            border-left: 4px solid transparent;
+            border-right: 4px solid transparent;
+            border-bottom: 4px solid #333;
+        }
+        .sort-arrow.desc {
+            border-left: 4px solid transparent;
+            border-right: 4px solid transparent;
+            border-top: 4px solid #333;
+        }
+        .leaflet-circle-custom {
+            transition: opacity 0.3s ease;
+        }
+    </style>
+</head>
+<body>
+    <div id="sidebar">
+        <h2>Business Jets Data</h2>
+        <table id="jetsTable">
+            <thead>
+                <tr>
+                    <th data-sort="name">Aircraft <span class="sort-arrow"></span></th>
+                    <th data-sort="price">Price ($M) <span class="sort-arrow"></span></th>
+                    <th data-sort="range">Range (nmi) <span class="sort-arrow"></span></th>
+                </tr>
+            </thead>
+            <tbody></tbody>
+        </table>
+    </div>
+    <div class="location-select">
+        <select id="citySelect">
+            <option value="51.5074,-0.1278">London, UK</option>
+            <option value="40.7128,-74.0060">New York, USA</option>
+            <option value="34.0522,-118.2437">Los Angeles, USA</option>
+            <option value="52.3676,4.9041">Amsterdam, Netherlands</option>
+            <option value="38.7223,-9.1393">Lisbon, Portugal</option>
+            <option value="21.0285,105.8542">Hanoi, Vietnam</option>
+            <option value="-36.8509,174.7645">Auckland, New Zealand</option>
+            <option value="25.2048,55.2708">Dubai, UAE</option>
+            <option value="-22.9068,-43.1729">Rio de Janeiro, Brazil</option>
+            <option value="35.0456,-85.3097">Chattanooga, USA</option>
+            <option value="41.0082,28.9784">Istanbul, Turkey</option>
+            <option value="28.6139,77.2090">Delhi, India</option>
+            <option value="13.7563,100.5018">Bangkok, Thailand</option>
+            <option value="-33.8688,151.2093">Sydney, Australia</option>
+            <option value="1.3521,103.8198">Singapore</option>
+            <option value="-33.4489,-70.6693">Santiago, Chile</option>
+            <option value="-33.9249,18.4241">Cape Town, South Africa</option>
+            <option value="40.4168,-3.7038">Madrid, Spain</option>
+        </select>
+    </div>
+    <div id="map"></div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
+    <script>
+        // Initialize variables
+        let circles = [];  // Store circle references
+        const NAUTICAL_MILE_TO_METERS = 1852;
+        let currentSort = { column: 'price', direction: 'asc' };
+
+        // Parse and sort the data
+        const jetsData = [
+            { name: "Gulfstream G700", manufacturer: "Gulfstream Aerospace", price: 80000000, range: 7500 },
+            { name: "Bombardier Global 7500", manufacturer: "Bombardier", price: 73000000, range: 7700 },
+            { name: "Dassault Falcon 8X", manufacturer: "Dassault Aviation", price: 59300000, range: 6450 },
+            { name: "Embraer Praetor 600", manufacturer: "Embraer", price: 21000000, range: 4018 },
+            { name: "Cessna Citation Longitude", manufacturer: "Textron Aviation", price: 28000000, range: 3500 },
+            { name: "HondaJet Elite", manufacturer: "Honda Aircraft", price: 5400000, range: 1437 },
+            { name: "Cirrus Vision Jet SF50", manufacturer: "Cirrus Aircraft", price: 3250000, range: 1275 },
+            { name: "Boeing Business Jet 737-7", manufacturer: "Boeing", price: 101500000, range: 6600 },
+            { name: "Airbus ACJ319neo", manufacturer: "Airbus", price: 107500000, range: 6000 },
+            { name: "Pilatus PC-24", manufacturer: "Pilatus Aircraft", price: 10700000, range: 2000 },
+            { name: "Gulfstream G500", manufacturer: "Gulfstream Aerospace", price: 50000000, range: 5300 },
+            { name: "Bombardier Challenger 350", manufacturer: "Bombardier", price: 26700000, range: 3200 },
+            { name: "Dassault Falcon 2000LXS", manufacturer: "Dassault Aviation", price: 34000000, range: 4000 },
+            { name: "Embraer Phenom 300E", manufacturer: "Embraer", price: 9650000, range: 2010 },
+            { name: "Cessna Citation CJ4", manufacturer: "Textron Aviation", price: 10750000, range: 2165 },
+            { name: "Learjet 75 Liberty", manufacturer: "Bombardier", price: 9900000, range: 2040 },
+            { name: "Gulfstream G280", manufacturer: "Gulfstream Aerospace", price: 25000000, range: 3600 },
+            { name: "Bombardier Global 6500", manufacturer: "Bombardier", price: 56000000, range: 6600 },
+            { name: "Dassault Falcon 900LX", manufacturer: "Dassault Aviation", price: 44000000, range: 4750 },
+            { name: "Embraer Legacy 650E", manufacturer: "Embraer", price: 25900000, range: 3900 },
+            { name: "Cessna Citation Sovereign+", manufacturer: "Textron Aviation", price: 19000000, range: 3200 },
+            { name: "HondaJet HA-420", manufacturer: "Honda Aircraft", price: 5300000, range: 1223 },
+            { name: "Cirrus Vision Jet G2", manufacturer: "Cirrus Aircraft", price: 2850000, range: 1100 },
+            { name: "Boeing Business Jet 787", manufacturer: "Boeing", price: 224000000, range: 9945 },
+            { name: "Airbus ACJ320neo", manufacturer: "Airbus", price: 110000000, range: 6000 },
+            { name: "Pilatus PC-12 NGX", manufacturer: "Pilatus Aircraft", price: 4390000, range: 1803 }
+        ].sort((a, b) => a.price - b.price);
+
+        // Function to update table
+        function updateTable() {
+            const tbody = document.querySelector('#jetsTable tbody');
+            tbody.innerHTML = '';
+            
+            const sortedData = [...jetsData].sort((a, b) => {
+                const aVal = a[currentSort.column];
+                const bVal = b[currentSort.column];
+                
+                if (typeof aVal === 'number') {
+                    return currentSort.direction === 'asc' ? aVal - bVal : bVal - aVal;
+                } else {
+                    return currentSort.direction === 'asc' 
+                        ? aVal.localeCompare(bVal) 
+                        : bVal.localeCompare(aVal);
+                }
+            });
+
+            sortedData.forEach((jet, index) => {
+                const row = document.createElement('tr');
+                const originalIndex = jetsData.findIndex(j => j.name === jet.name);
+                row.setAttribute('data-circle-index', originalIndex);
+                
+                row.innerHTML = `
+                    <td>${jet.name}</td>
+                    <td>${(jet.price / 1000000).toFixed(1)}</td>
+                    <td>${jet.range}</td>
+                `;
+
+                // Add hover handlers
+                row.addEventListener('mouseenter', () => {
+                    circles.forEach((circle, idx) => {
+                        if (idx !== originalIndex) {
+                            circle._path.style.opacity = '0.1';
+                        } else {
+                            circle._path.style.opacity = '1';
+                        }
+                    });
+                });
+
+                row.addEventListener('mouseleave', () => {
+                    circles.forEach(circle => {
+                        circle._path.style.opacity = '1';
+                    });
+                });
+
+                tbody.appendChild(row);
+            });
+
+            // Update sort arrows
+            document.querySelectorAll('th').forEach(th => {
+                const arrow = th.querySelector('.sort-arrow');
+                arrow.className = 'sort-arrow';
+                if (th.dataset.sort === currentSort.column) {
+                    arrow.classList.add(currentSort.direction);
+                }
+            });
+        }
+
+        // Add click handlers for table sorting
+        document.querySelectorAll('th').forEach(th => {
+            th.addEventListener('click', () => {
+                const column = th.dataset.sort;
+                if (currentSort.column === column) {
+                    currentSort.direction = currentSort.direction === 'asc' ? 'desc' : 'asc';
+                } else {
+                    currentSort.column = column;
+                    currentSort.direction = 'asc';
+                }
+                updateTable();
+            });
+        });
+
+        // Initial table population
+        updateTable();
+
+        // Initialize the map
+        const map = L.map('map').setView([51.5074, -0.1278], 3);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '© OpenStreetMap contributors'
+        }).addTo(map);
+
+        function getColor(price) {
+            // Use logarithmic scale for better distribution
+            const logPrice = Math.log(price);
+            const logMin = Math.log(Math.min(...jetsData.map(jet => jet.price)));
+            const logMax = Math.log(Math.max(...jetsData.map(jet => jet.price)));
+            const normalized = (logPrice - logMin) / (logMax - logMin);
+
+            if (normalized < 0.5) {
+                // Green to Yellow
+                const r = Math.floor(normalized * 2 * 255);
+                return `rgb(${r}, 255, 0)`;
+            } else {
+                // Yellow to Red
+                const g = Math.floor((1 - (normalized - 0.5) * 2) * 255);
+                return `rgb(255, ${g}, 0)`;
+            }
+        }
+
+        function updateCircles(lat, lng) {
+            // Remove existing circles
+            circles.forEach(circle => map.removeLayer(circle));
+            circles = [];
+
+            // Add new circles for each jet
+            jetsData.forEach((jet, index) => {
+                const circle = L.circle([lat, lng], {
+                    color: getColor(jet.price),
+                    weight: 2,
+                    fill: false,
+                    radius: jet.range * NAUTICAL_MILE_TO_METERS,
+                    interactive: true,
+                    className: `leaflet-circle-custom circle-${index}`
+                })
+                .bindPopup(`
+                    <strong>${jet.name}</strong><br>
+                    Manufacturer: ${jet.manufacturer}<br>
+                    Price: $${(jet.price / 1000000).toFixed(1)}M<br>
+                    Range: ${jet.range} nmi
+                `)
+                .addTo(map);
+                
+                circles.push(circle);
+            });
+        }
+
+        // Event listener for dropdown changes
+        document.getElementById('citySelect').addEventListener('change', function(e) {
+            const [lat, lng] = e.target.value.split(',').map(Number);
+            map.setView([lat, lng], 3);
+            updateCircles(lat, lng);
+        });
+
+        // Initial circles
+        updateCircles(51.5074, -0.1278);
+
+        // Add legend
+        const legend = L.control({ position: 'bottomright' });
+        legend.onAdd = function(map) {
+            const div = L.DomUtil.create('div', 'legend');
+            div.innerHTML = '<h4>Price Range</h4>';
+            
+            // Add sample price points
+            const pricePoints = [
+                Math.min(...jetsData.map(jet => jet.price)),
+                (Math.min(...jetsData.map(jet => jet.price)) + Math.max(...jetsData.map(jet => jet.price))) / 2,
+                Math.max(...jetsData.map(jet => jet.price))
+            ];
+            
+            pricePoints.forEach(price => {
+                div.innerHTML += `
+                    <div class="legend-item">
+                        <span class="color-box" style="background: ${getColor(price)}"></span>
+                        $${(price / 1000000).toFixed(1)}M
+                    </div>
+                `;
+            });
+            
+            return div;
+        };
+        legend.addTo(map);
+    </script>
+</body>
+</html>
